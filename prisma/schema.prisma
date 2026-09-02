@@ -1,0 +1,82 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  // Datos de pago guardados una sola vez: autocompletan cada rifa nueva.
+  bankName      String?
+  accountNumber String?
+  accountHolder String?
+  cedula        String?
+  paymentEmail  String?
+  whatsapp      String?
+  contactName   String?
+
+  raffles Raffle[]
+}
+
+enum TicketStatus {
+  APARTADO
+  PAGADO
+}
+
+model Raffle {
+  id                String   @id @default(cuid())
+  slug              String   @unique
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title             String
+  subtitle          String?
+  prizeDescription  String
+  imageUrl          String?
+  price             Float    @default(2)
+  totalNumbers      Int      @default(100)
+  drawDate          DateTime?
+  drawMethod        String?
+
+  bankName          String?
+  accountNumber     String?
+  accountHolder     String?
+  cedula            String?
+  paymentEmail      String?
+  whatsapp          String?
+  contactName       String?
+
+  winnerNumber      String?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tickets           Ticket[]
+
+  @@index([userId])
+}
+
+model Ticket {
+  id         String       @id @default(cuid())
+  raffleId   String
+  raffle     Raffle       @relation(fields: [raffleId], references: [id], onDelete: Cascade)
+  number     String
+  buyerName  String
+  buyerPhone String?
+  status     TicketStatus @default(APARTADO)
+  note       String?
+  code       String
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  @@unique([raffleId, number])
+  @@index([raffleId])
+}
