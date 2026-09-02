@@ -41,6 +41,11 @@ export function formatMoney(n: number): string {
   return `$${n % 1 === 0 ? n : n.toFixed(2)}`;
 }
 
+/** Formato para documentos: $2,00 */
+export function formatMoneyExacto(n: number): string {
+  return `$${n.toFixed(2).replace(".", ",")}`;
+}
+
 export function formatDate(iso: string | Date | null | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);

@@ -33,7 +33,13 @@ export default async function DashboardPage() {
           </form>
         </div>
 
-        <div className="mt-6 flex justify-end">
+        <div className="mt-6 flex flex-wrap justify-end gap-2">
+          <Link
+            href="/dashboard/datos-de-pago"
+            className="border-2 border-crema2 px-5 py-3 text-sm font-bold tracking-wide text-crema hover:bg-crema2 hover:text-marron"
+          >
+            Mis datos de pago
+          </Link>
           <Link
             href="/dashboard/new"
             className="border-2 border-marron bg-dorado px-5 py-3 text-sm font-bold tracking-wide text-marron hover:bg-[#e8b950]"

@@ -19,19 +19,33 @@ almacenamiento en la nube por usuario.
 
 ## Cómo funciona
 
-1. Cada persona crea una cuenta (correo + contraseña).
-2. Desde su panel (`/dashboard`) crea una rifa: sube la foto del premio,
-   define el precio por número, la fecha del sorteo y sus datos de pago.
-3. Se genera un tablero público en `/r/<slug-de-la-rifa>` con la cuadrícula
-   de números, buscador, lista de participantes y certificados descargables
-   (igual que el tablero original).
-4. Cualquier visitante con el enlace puede reservar un número libre
-   escribiendo su nombre y teléfono. Solo la organizadora (dueña de la
-   rifa, con sesión iniciada) puede marcar un número como pagado, liberar
-   un número o registrar el número ganador.
-5. Todo lo que ve/edita cada organizador está aislado por usuario: nadie
-   más puede administrar o borrar los números de una rifa que no le
-   pertenece.
+### La organizadora (administradora de su rifa)
+
+1. Crea su cuenta (correo + contraseña) y guarda sus datos de pago una sola
+   vez en **Mis datos de pago**; autocompletan cada rifa nueva.
+2. Desde su panel (`/dashboard`) crea la rifa: sube la foto del premio,
+   define el precio por número y la fecha del sorteo.
+3. Se genera un tablero en `/r/<slug-de-la-rifa>` que comparte por WhatsApp.
+4. Es la **única** que puede confirmar pagos, editar o liberar números y
+   registrar el número ganador. Nadie más puede tocar su rifa.
+
+### El comprador (sin iniciar sesión)
+
+1. Abre el enlace, elige un número libre y deja su nombre y teléfono.
+2. Recibe al instante un **comprobante de reserva** en imagen, con la cuenta
+   bancaria donde depositar y los pasos a seguir. Puede guardarlo o
+   enviárselo a la organizadora por WhatsApp con un botón.
+3. Deposita y manda la foto del comprobante por WhatsApp.
+4. Cuando la organizadora confirma el pago, el número pasa a **PAGADO** y
+   recién ahí se genera el **certificado** que acredita que el número es
+   suyo. Un número apartado nunca genera certificado.
+
+### Aislamiento y privacidad
+
+- Cada organizadora solo ve y administra sus propias rifas.
+- El tablero público muestra qué números están libres, apartados o pagados,
+  pero **no** muestra los teléfonos de los compradores: eso solo lo ve la
+  organizadora.
 
 ## Desarrollo local
 
@@ -76,11 +90,19 @@ cuenta y publicar su propia rifa con almacenamiento en la nube.
 ## Estructura del proyecto
 
 ```
-prisma/schema.prisma        Modelos: User, Raffle, Ticket
-src/lib/auth.ts              Configuración de NextAuth (credenciales)
-src/app/dashboard/           Panel del organizador (listar/crear rifas)
-src/app/r/[slug]/            Tablero público de cada rifa
-src/components/RaffleBoard.tsx  Cuadrícula, ficha de número, certificado
-src/app/api/raffles/         Endpoints (crear rifa, reservar número, ganador)
-src/app/api/upload/          Subida de la imagen del premio a Vercel Blob
+prisma/schema.prisma            Modelos: User, Raffle, Ticket
+src/lib/auth.ts                 Configuración de NextAuth (credenciales)
+src/lib/certificate.ts          Dibuja el comprobante de reserva y el certificado
+src/app/dashboard/              Panel: rifas y datos de pago de la organizadora
+src/app/r/[slug]/               Tablero de cada rifa
+src/components/RaffleBoard.tsx  Cuadrícula, ficha de número, documentos
+src/app/api/raffles/            Endpoints (crear rifa, reservar número, ganador)
+src/app/api/upload/             Subida de la imagen del premio a Vercel Blob
 ```
+
+## Nota sobre los datos bancarios
+
+Los datos de pago **no están escritos en el código**: se guardan en la base
+de datos de cada organizadora (en su perfil y en cada rifa). Este repositorio
+es público, así que ninguna cuenta ni cédula debe escribirse en el código
+fuente; se cargan desde la app una vez desplegada.

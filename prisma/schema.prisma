@@ -14,6 +14,15 @@ model User {
   passwordHash String
   createdAt    DateTime @default(now())
 
+  // Datos de pago guardados una sola vez: autocompletan cada rifa nueva.
+  bankName      String?
+  accountNumber String?
+  accountHolder String?
+  cedula        String?
+  paymentEmail  String?
+  whatsapp      String?
+  contactName   String?
+
   raffles Raffle[]
 }
 

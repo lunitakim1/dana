@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { RaffleDTO, TicketDTO } from "@/lib/types";
 import { formatDate, formatMoney, padNumber, whatsappNumber } from "@/lib/utils";
-import { dibujarCertificado, dataUrlABlob } from "@/lib/certificate";
+import { dibujarCertificado, dibujarComprobante, dataUrlABlob } from "@/lib/certificate";
 
 type TicketMap = Record<string, TicketDTO>;
 
@@ -20,7 +20,7 @@ export default function RaffleBoard({ initial }: { initial: RaffleDTO }) {
   const [winner, setWinner] = useState<string | null>(initial.winnerNumber);
   const [filtro, setFiltro] = useState("");
   const [fichaNum, setFichaNum] = useState<string | null>(null);
-  const [vistaCert, setVistaCert] = useState(false);
+  const [vistaDoc, setVistaDoc] = useState(false);
   const [sync, setSync] = useState<{ clase: string; texto: string }>({
     clase: "ok",
     texto: "Cargado",
@@ -339,7 +339,13 @@ export default function RaffleBoard({ initial }: { initial: RaffleDTO }) {
         </div>
 
         <h2 className="mb-2 mt-6 border-b-2 border-marron pb-1 text-[15px] tracking-[0.18em]">PARTICIPANTES</h2>
-        <ListaParticipantes tickets={tickets} filtro={filtro} coincide={coincide} onSelect={setFichaNum} />
+        <ListaParticipantes
+          tickets={tickets}
+          filtro={filtro}
+          coincide={coincide}
+          onSelect={setFichaNum}
+          isOwner={raffle.isOwner}
+        />
       </div>
 
       {fichaNum !== null && (
@@ -350,15 +356,15 @@ export default function RaffleBoard({ initial }: { initial: RaffleDTO }) {
           isOwner={raffle.isOwner}
           onClose={() => {
             setFichaNum(null);
-            setVistaCert(false);
+            setVistaDoc(false);
           }}
           onGuardado={(t) => {
             setTickets((prev) => ({ ...prev, [t.number]: t }));
           }}
           onLiberar={() => liberarTicket(fichaNum).then(() => setFichaNum(null))}
           guardarApi={guardarTicketApi}
-          verCertificado={vistaCert}
-          setVerCertificado={setVistaCert}
+          verDocumento={vistaDoc}
+          setVerDocumento={setVistaDoc}
         />
       )}
     </div>
@@ -379,11 +385,13 @@ function ListaParticipantes({
   filtro,
   coincide,
   onSelect,
+  isOwner,
 }: {
   tickets: TicketMap;
   filtro: string;
   coincide: (num: string) => boolean;
   onSelect: (num: string) => void;
+  isOwner: boolean;
 }) {
   let claves = Object.keys(tickets).sort();
   if (filtro) claves = claves.filter(coincide);
@@ -403,7 +411,7 @@ function ListaParticipantes({
       <table className="w-full border-collapse text-sm">
         <thead>
           <tr>
-            {["N°", "Nombre", "Teléfono", "Estado", "Fecha"].map((h) => (
+            {(isOwner ? ["N°", "Nombre", "Teléfono", "Estado", "Fecha"] : ["N°", "Nombre", "Estado", "Fecha"]).map((h) => (
               <th key={h} className="border-b border-marron/30 px-1.5 py-1.5 text-left text-[11px] tracking-[0.12em] text-[#7a5033]">
                 {h}
               </th>
@@ -417,7 +425,7 @@ function ListaParticipantes({
               <tr key={k} onClick={() => onSelect(k)} className="cursor-pointer border-b border-marron/15 hover:bg-crema2">
                 <td className="px-1.5 py-2"><b>{k}</b></td>
                 <td className="px-1.5 py-2">{t.buyerName}</td>
-                <td className="px-1.5 py-2">{t.buyerPhone || "—"}</td>
+                {isOwner && <td className="px-1.5 py-2">{t.buyerPhone || "—"}</td>}
                 <td className="px-1.5 py-2">
                   <span
                     className={`border px-2 py-0.5 text-[11px] ${
@@ -446,8 +454,8 @@ function FichaModal({
   onGuardado,
   onLiberar,
   guardarApi,
-  verCertificado,
-  setVerCertificado,
+  verDocumento,
+  setVerDocumento,
 }: {
   raffle: RaffleDTO;
   numero: string;
@@ -457,8 +465,8 @@ function FichaModal({
   onGuardado: (t: TicketDTO) => void;
   onLiberar: () => void;
   guardarApi: (number: string, payload: Record<string, unknown>) => Promise<{ ok: true; ticket: TicketDTO } | { ok: false; error: string }>;
-  verCertificado: boolean;
-  setVerCertificado: (v: boolean) => void;
+  verDocumento: boolean;
+  setVerDocumento: (v: boolean) => void;
 }) {
   const [nombre, setNombre] = useState(ticket?.buyerName || "");
   const [telefono, setTelefono] = useState(ticket?.buyerPhone || "");
@@ -476,14 +484,23 @@ function FichaModal({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  async function guardar(irACertificado: boolean) {
+  /**
+   * Guarda la ficha. Un visitante siempre termina viendo su comprobante de
+   * reserva (con la cuenta donde depositar); la organizadora decide.
+   */
+  async function guardar(opciones?: { verDocumento?: boolean; estadoForzado?: "APARTADO" | "PAGADO" }) {
     if (!nombre.trim()) {
       setAviso(isOwner ? "Escribe el nombre del comprador para guardar." : "Escribe tu nombre para participar.");
       return;
     }
     setEnviando(true);
     const payload = isOwner
-      ? { buyerName: nombre.trim(), buyerPhone: telefono.trim(), note: nota.trim(), status: estado }
+      ? {
+          buyerName: nombre.trim(),
+          buyerPhone: telefono.trim(),
+          note: nota.trim(),
+          status: opciones?.estadoForzado || estado,
+        }
       : { buyerName: nombre.trim(), buyerPhone: telefono.trim() };
     const res = await guardarApi(numero, payload);
     setEnviando(false);
@@ -492,16 +509,20 @@ function FichaModal({
       return;
     }
     onGuardado(res.ticket);
-    if (irACertificado) setVerCertificado(true);
+    if (opciones?.estadoForzado) setEstado(opciones.estadoForzado);
+
+    // El comprador se lleva su comprobante apenas aparta el número.
+    if (opciones?.verDocumento || !isOwner) setVerDocumento(true);
     else onClose();
   }
 
-  if (verCertificado && ticket) {
+  if (verDocumento && ticket) {
     return (
-      <CertificadoModal
+      <DocumentoModal
         raffle={raffle}
         ticket={ticket}
-        onVolver={() => setVerCertificado(false)}
+        isOwner={isOwner}
+        onVolver={() => setVerDocumento(false)}
         onClose={onClose}
       />
     );
@@ -525,8 +546,13 @@ function FichaModal({
 
         {!puedeEditar && (
           <div className="mt-3 border border-marron/30 bg-crema2 p-3 text-sm">
-            <p><b>{ticket!.buyerName}</b> ya registró este número.</p>
-            <p className="mt-1">Estado: <span className="font-bold">{ticket!.status}</span></p>
+            <p><b>{ticket!.buyerName}</b> ya tomó este número.</p>
+            <p className="mt-1">
+              Estado:{" "}
+              <span className="font-bold">
+                {ticket!.status === "PAGADO" ? "PAGADO" : "APARTADO, pendiente de pago"}
+              </span>
+            </p>
           </div>
         )}
 
@@ -568,24 +594,41 @@ function FichaModal({
           </>
         )}
 
+        {!isOwner && !ticket && (
+          <p className="mt-3 text-xs leading-relaxed text-[#7a5033]">
+            Al reservar recibirás un comprobante con la cuenta donde depositar{" "}
+            {formatMoney(raffle.price)}. {raffle.contactName || "La organizadora"} confirma tu pago y
+            ahí se genera tu certificado.
+          </p>
+        )}
+
         {aviso && <p className="mt-2 min-h-[18px] text-sm text-rojo">{aviso}</p>}
 
         <div className="mt-4 flex flex-wrap gap-2">
           {puedeEditar && (
             <button
-              onClick={() => guardar(false)}
+              onClick={() => guardar()}
               disabled={enviando}
               className="border-2 border-marron bg-marron px-4 py-2.5 text-sm font-bold text-crema hover:bg-[#61301c] disabled:opacity-60"
             >
               {isOwner ? "Guardar" : enviando ? "Reservando…" : "Reservar este número"}
             </button>
           )}
+          {isOwner && ticket && ticket.status !== "PAGADO" && (
+            <button
+              onClick={() => guardar({ estadoForzado: "PAGADO", verDocumento: true })}
+              disabled={enviando}
+              className="border-2 border-verde bg-verde px-4 py-2.5 text-sm font-bold text-crema hover:bg-[#3a5019] disabled:opacity-60"
+            >
+              Confirmar pago y generar certificado
+            </button>
+          )}
           {ticket && (
             <button
-              onClick={() => setVerCertificado(true)}
+              onClick={() => setVerDocumento(true)}
               className="border-2 border-marron bg-dorado px-4 py-2.5 text-sm font-bold text-marron hover:bg-[#e8b950]"
             >
-              Ver certificado
+              {ticket.status === "PAGADO" ? "Ver certificado" : "Ver comprobante de pago"}
             </button>
           )}
           <button onClick={onClose} className="border-2 border-marron bg-transparent px-4 py-2.5 text-sm font-bold hover:bg-crema2">
@@ -618,25 +661,37 @@ function Campo({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function CertificadoModal({
+/**
+ * Muestra el documento que corresponde al estado del número:
+ * comprobante de reserva mientras está apartado, certificado cuando la
+ * organizadora ya confirmó el pago.
+ */
+function DocumentoModal({
   raffle,
   ticket,
+  isOwner,
   onVolver,
   onClose,
 }: {
   raffle: RaffleDTO;
   ticket: TicketDTO;
+  isOwner: boolean;
   onVolver: () => void;
   onClose: () => void;
 }) {
+  const esPagado = ticket.status === "PAGADO";
   const [img, setImg] = useState<string | null>(null);
-  const [ayuda, setAyuda] = useState("Mantén presionada la imagen para guardarla en tu galería, o usa los botones.");
+  const [ayuda, setAyuda] = useState(
+    esPagado
+      ? "Mantén presionada la imagen para guardarla en tu galería, o usa los botones."
+      : "Guarda esta imagen: tiene la cuenta donde debes depositar. Tu certificado se genera cuando se confirme el pago."
+  );
   const overlayRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setImg(dibujarCertificado(raffle, ticket));
+    setImg(esPagado ? dibujarCertificado(raffle, ticket) : dibujarComprobante(raffle, ticket));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [ticket.number, ticket.status, ticket.buyerName, ticket.code]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -648,32 +703,47 @@ function CertificadoModal({
 
   if (!img) return null;
 
-  const nombreArchivo = `certificado-${ticket.number}-${ticket.buyerName.replace(/\s+/g, "-").toLowerCase()}.png`;
+  const tipo = esPagado ? "certificado" : "comprobante";
+  const nombreArchivo = `${tipo}-${ticket.number}-${ticket.buyerName.replace(/\s+/g, "-").toLowerCase()}.png`;
   const blob = dataUrlABlob(img);
 
-  const textoWhatsapp =
-    `*CERTIFICADO ${raffle.title.toUpperCase()}*\n` +
-    `Número: ${ticket.number}\n` +
-    `A nombre de: ${ticket.buyerName}\n` +
-    `Premio: ${raffle.prizeDescription}\n` +
-    (raffle.drawDate ? `Sorteo: ${formatDate(raffle.drawDate)}` : "") +
-    (raffle.drawMethod ? `, ${raffle.drawMethod}\n` : "\n") +
-    `Código de verificación: ${ticket.code}\n` +
-    `Contacto: ${raffle.contactName || ""} · ${raffle.whatsapp || ""}` +
-    (ticket.status !== "PAGADO"
-      ? `\n\n*Para pagar tu número (${formatMoney(raffle.price)}):*\n` +
-        `${raffle.bankName || ""} ${raffle.accountNumber || ""}\n` +
-        `${raffle.accountHolder || ""}\n` +
-        `CI: ${raffle.cedula || ""}\n` +
-        `${raffle.paymentEmail || ""}\n` +
-        `Manda el comprobante a este mismo WhatsApp.`
-      : "");
+  const datosDePago =
+    `${raffle.bankName || ""} ${raffle.accountNumber || ""}\n` +
+    `${raffle.accountHolder || ""}\n` +
+    `CI: ${raffle.cedula || ""}\n` +
+    `${raffle.paymentEmail || ""}`;
+
+  // La organizadora le escribe al comprador; el comprador le escribe a ella.
+  const textoWhatsapp = isOwner
+    ? esPagado
+      ? `*CERTIFICADO ${raffle.title.toUpperCase()}*\n` +
+        `Número: ${ticket.number}\n` +
+        `A nombre de: ${ticket.buyerName}\n` +
+        `Premio: ${raffle.prizeDescription}\n` +
+        (raffle.drawDate ? `Sorteo: ${formatDate(raffle.drawDate)}` : "") +
+        (raffle.drawMethod ? `, ${raffle.drawMethod}\n` : "\n") +
+        `Tu pago está confirmado, el número es tuyo.\n` +
+        `Código de verificación: ${ticket.code}`
+      : `Hola ${ticket.buyerName}, tienes apartado el número *${ticket.number}* de la rifa "${raffle.title}".\n\n` +
+        `*Para completar tu compra deposita ${formatMoney(raffle.price)}:*\n` +
+        datosDePago +
+        `\n\nEnvíame la foto del comprobante y confirmo tu pago.`
+    : `Hola${raffle.contactName ? " " + raffle.contactName : ""}, aparté el número *${ticket.number}* de la rifa "${raffle.title}".\n` +
+      `Mi nombre: ${ticket.buyerName}\n` +
+      (ticket.buyerPhone ? `Mi teléfono: ${ticket.buyerPhone}\n` : "") +
+      `Código de reserva: ${ticket.code}\n\n` +
+      (esPagado
+        ? "Mi pago ya está confirmado."
+        : `Voy a depositar ${formatMoney(raffle.price)} y te envío el comprobante.`);
 
   async function compartir() {
     try {
       const archivo = new File([blob], nombreArchivo, { type: "image/png" });
       if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
-        await navigator.share({ files: [archivo], title: "Certificado " + ticket.number });
+        await navigator.share({
+          files: [archivo],
+          title: `${esPagado ? "Certificado" : "Comprobante"} ${ticket.number}`,
+        });
         return;
       }
     } catch (e) {
@@ -709,7 +779,15 @@ function CertificadoModal({
   }
 
   function enviarWhatsapp() {
-    const tel = whatsappNumber(ticket.buyerPhone);
+    const tel = whatsappNumber(isOwner ? ticket.buyerPhone : raffle.whatsapp);
+    if (!tel) {
+      setAyuda(
+        isOwner
+          ? "Este comprador no dejó teléfono, así que no se puede abrir WhatsApp."
+          : "La organizadora no registró un WhatsApp de contacto en esta rifa."
+      );
+      return;
+    }
     window.open(`https://wa.me/${tel}?text=${encodeURIComponent(textoWhatsapp)}`, "_blank");
   }
 
@@ -721,7 +799,11 @@ function CertificadoModal({
     >
       <div className="max-h-[92vh] w-full max-w-md overflow-y-auto border-[3px] border-dorado bg-crema p-5 shadow-2xl">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={img} alt={`Certificado del número ${ticket.number}`} className="w-full border-2 border-marron" />
+        <img
+          src={img}
+          alt={`${esPagado ? "Certificado" : "Comprobante de reserva"} del número ${ticket.number}`}
+          className="w-full border-2 border-marron"
+        />
         <p className="mt-2.5 text-xs leading-relaxed text-[#7a5033]">{ayuda}</p>
         <div className="mt-4 flex flex-wrap gap-2">
           <button onClick={compartir} className="border-2 border-marron bg-marron px-4 py-2.5 text-sm font-bold text-crema hover:bg-[#61301c]">
@@ -734,7 +816,7 @@ function CertificadoModal({
             Abrir en pestaña nueva
           </button>
           <button onClick={enviarWhatsapp} className="border-2 border-marron bg-dorado px-4 py-2.5 text-sm font-bold text-marron hover:bg-[#e8b950]">
-            Enviar texto por WhatsApp
+            {isOwner ? "Enviar al comprador por WhatsApp" : "Enviar mi reserva por WhatsApp"}
           </button>
           <button onClick={onVolver} className="border-2 border-marron bg-transparent px-4 py-2.5 text-sm font-bold hover:bg-crema2">
             Volver
